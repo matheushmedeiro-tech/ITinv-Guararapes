@@ -296,7 +296,7 @@ func getAdminEmail() string {
 	if email == "" {
 		log.Fatal("ADMIN_EMAIL is required")
 	}
-	return email
+	return strings.TrimSpace(email)
 }
 
 func getAdminPassword() string {
@@ -304,7 +304,7 @@ func getAdminPassword() string {
 	if password == "" {
 		log.Fatal("ADMIN_PASSWORD is required")
 	}
-	return password
+	return strings.TrimSpace(password)
 }
 
 func getAuthToken() string {
@@ -342,12 +342,15 @@ func (s *stateServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if payload.Email != getAdminEmail() || payload.Password != getAdminPassword() {
+	email := strings.TrimSpace(payload.Email)
+	password := strings.TrimSpace(payload.Password)
+
+	if !strings.EqualFold(email, getAdminEmail()) || password != getAdminPassword() {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	respondJSON(w, LoginResponse{Token: getAuthToken(), Email: payload.Email, Role: "admin"})
+	respondJSON(w, LoginResponse{Token: getAuthToken(), Email: getAdminEmail(), Role: "admin"})
 }
 
 func (s *stateServer) handleMe(w http.ResponseWriter, r *http.Request) {

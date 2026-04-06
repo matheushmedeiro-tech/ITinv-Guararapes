@@ -17,11 +17,19 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await apiClient.post('/api/login', { email, password });
+      const response = await apiClient.post('/api/login', {
+        email: email.trim(),
+        password,
+      });
       login(response.token, { email: response.email, role: response.role });
       navigate('/', { replace: true });
     } catch (loginError) {
-      setError('Credenciais inválidas. Verifique e tente novamente.');
+      const message = String(loginError?.message || '');
+      if (message.includes('401')) {
+        setError('Credenciais inválidas. Verifique e tente novamente.');
+      } else {
+        setError('Falha ao conectar com o servidor. Verifique o deploy/env vars do backend.');
+      }
     } finally {
       setIsSubmitting(false);
     }
