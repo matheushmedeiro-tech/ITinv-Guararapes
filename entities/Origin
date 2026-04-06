@@ -1,0 +1,13 @@
+{
+  "name": "Origin",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Nome da Origem"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

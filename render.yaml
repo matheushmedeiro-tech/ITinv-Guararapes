@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: itinv-backend
+    runtime: go
+    rootDir: backend-go
+    buildCommand: go mod tidy
+    startCommand: go run main.go
+    envVars:
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: itinv-db
+          property: connectionString
+
+  - type: web
+    name: itinv-frontend
+    runtime: static
+    rootDir: .
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://itinv-backend.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  - name: itinv-db
+    databaseName: itinv
+    user: itinv_user

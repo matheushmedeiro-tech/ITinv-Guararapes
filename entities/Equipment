@@ -1,0 +1,53 @@
+{
+  "name": "Equipment",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Name"
+    },
+    "type": {
+      "type": "string",
+      "title": "Type",
+      "enum": [
+        "Computer",
+        "Monitor",
+        "Notebook",
+        "Peripheral"
+      ]
+    },
+    "origin": {
+      "type": "string",
+      "title": "Origin"
+    },
+    "formatted": {
+      "type": "boolean",
+      "title": "Formatted",
+      "default": false
+    },
+    "configured": {
+      "type": "boolean",
+      "title": "Configured",
+      "default": false
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "ok",
+        "problem"
+      ],
+      "default": "ok"
+    },
+    "problem_description": {
+      "type": "string",
+      "title": "Problem Description"
+    }
+  },
+  "required": [
+    "name",
+    "type",
+    "origin",
+    "status"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "ProblemType",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Nome do Problema"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

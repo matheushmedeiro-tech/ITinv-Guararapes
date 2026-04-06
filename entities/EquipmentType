@@ -1,0 +1,18 @@
+{
+  "name": "EquipmentType",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Nome"
+    },
+    "emoji": {
+      "type": "string",
+      "title": "Emoji",
+      "default": "\ud83d\udce6"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
