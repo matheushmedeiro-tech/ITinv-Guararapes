@@ -788,7 +788,7 @@ export default function Inventory() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
                   <span className="text-sm text-slate-700">Status</span>
-                  <select value={formValues.status} onChange={(e) => setFormValues((prev) => ({ ...prev, status: e.target.value, problemType: e.target.value === 'Problem' ? prev.problemType || appState.problemTypes[0] : prev.problemType }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none focus:border-slate-500">
+                  <select value={formValues.status} onChange={(e) => setFormValues((prev) => ({ ...prev, status: e.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none focus:border-slate-500">
                     <option value="OK">OK</option>
                     <option value="Problem">Problem</option>
                   </select>
@@ -799,6 +799,7 @@ export default function Inventory() {
                     <input type="text" name="problemType" value={problemTypeInputValue}
                       onChange={(e) => { setProblemTypeInputValue(e.target.value); setProblemTypeShowDropdown(true); }}
                       onMouseDown={() => setProblemTypeShowDropdown(true)}
+                      onKeyDown={(e) => { if ((e.key === 'Tab' || e.key === 'Enter') && filteredProblems.length > 0) { e.preventDefault(); const s = filteredProblems[0]; setFormValues({ ...formValues, problemType: s }); setProblemTypeInputValue(s); setProblemTypeShowDropdown(false); } }}
                       disabled={formValues.status !== 'Problem'}
                       className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none focus:border-slate-500 disabled:bg-slate-100" placeholder="Digite ou selecione..." />
                     {problemTypeShowDropdown && filteredProblems.length > 0 && formValues.status === 'Problem' && (
