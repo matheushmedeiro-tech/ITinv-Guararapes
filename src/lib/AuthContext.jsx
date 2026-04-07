@@ -32,7 +32,12 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(true);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await apiClient.post('/api/logout');
+    } catch {
+      // Invalidate locally even if server call fails
+    }
     clearAuthToken();
     setUser(null);
     setIsAuthenticated(false);

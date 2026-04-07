@@ -1,20 +1,25 @@
 package main
 
 import (
-	"crypto/sha256"
+	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+// ── Data types ──────────────────────────────────────────────────────────────
 
 type EquipmentItem struct {
 	ID                 string `json:"id"`
@@ -77,12 +82,153 @@ type UserResponse struct {
 	Role  string `json:"role"`
 }
 
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// ── Session management ──────────────────────────────────────────────────────
+
+const sessionTTL = 24 * time.Hour
+
+type userSession struct {
+	email     string
+	role      string
+	expiresAt time.Time
+}
+
+type sessionStore struct {
+	mu       sync.RWMutex
+	sessions map[string]userSession
+}
+
+func newSessionStore() *sessionStore {
+	s := &sessionStore{sessions: make(map[string]userSession)}
+	go s.cleanupLoop()
+	return s
+}
+
+func (s *sessionStore) create(email, role string) (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(b)
+
+	s.mu.Lock()
+	s.sessions[token] = userSession{
+		email:     email,
+		role:      role,
+		expiresAt: time.Now().Add(sessionTTL),
+	}
+	s.mu.Unlock()
+
+	return token, nil
+}
+
+func (s *sessionStore) get(token string) (userSession, bool) {
+	s.mu.RLock()
+	sess, ok := s.sessions[token]
+	s.mu.RUnlock()
+
+	if !ok || time.Now().After(sess.expiresAt) {
+		if ok {
+			s.delete(token)
+		}
+		return userSession{}, false
+	}
+	return sess, true
+}
+
+func (s *sessionStore) delete(token string) {
+	s.mu.Lock()
+	delete(s.sessions, token)
+	s.mu.Unlock()
+}
+
+func (s *sessionStore) cleanupLoop() {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.mu.Lock()
+		now := time.Now()
+		for k, v := range s.sessions {
+			if now.After(v.expiresAt) {
+				delete(s.sessions, k)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+// ── Rate limiter ────────────────────────────────────────────────────────────
+
+type rateLimiter struct {
+	mu          sync.Mutex
+	attempts    map[string][]time.Time
+	maxAttempts int
+	window      time.Duration
+}
+
+func newRateLimiter(maxAttempts int, window time.Duration) *rateLimiter {
+	rl := &rateLimiter{
+		attempts:    make(map[string][]time.Time),
+		maxAttempts: maxAttempts,
+		window:      window,
+	}
+	go rl.cleanupLoop()
+	return rl
+}
+
+func (rl *rateLimiter) allow(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+
+	var recent []time.Time
+	for _, t := range rl.attempts[key] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+
+	if len(recent) >= rl.maxAttempts {
+		rl.attempts[key] = recent
+		return false
+	}
+
+	rl.attempts[key] = append(recent, now)
+	return true
+}
+
+func (rl *rateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		cutoff := time.Now().Add(-rl.window)
+		for k, attempts := range rl.attempts {
+			var recent []time.Time
+			for _, t := range attempts {
+				if t.After(cutoff) {
+					recent = append(recent, t)
+				}
+			}
+			if len(recent) == 0 {
+				delete(rl.attempts, k)
+			} else {
+				rl.attempts[k] = recent
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// ── Default state ───────────────────────────────────────────────────────────
+
 var defaultAppState = AppState{
-	Equipment: []EquipmentItem{
-		{ID: "1", Name: "Workstation A1", Type: "Computer", Origin: "Warehouse", Formatted: true, Configured: true, Status: "OK"},
-		{ID: "2", Name: "Reception Monitor", Type: "Monitor", Origin: "New stock", Formatted: false, Configured: false, Status: "Problem", ProblemType: "Screen issue", ProblemDescription: "Flickering screen during startup."},
-		{ID: "3", Name: "Finance Notebook", Type: "Notebook", Origin: "Lease", Formatted: true, Configured: false, Status: "OK"},
-	},
+	Equipment:             []EquipmentItem{},
 	EquipmentTypes:        []string{"Computer", "Monitor", "Notebook", "Printer", "Other"},
 	Origins:               []string{"Warehouse", "New stock", "Lease", "Office", "Repair"},
 	ProblemTypes:          []string{"Screen issue", "Battery", "Performance", "Network", "Other"},
@@ -95,6 +241,9 @@ var defaultAppState = AppState{
 
 const defaultStateFilePath = "data/state.json"
 const stateKey = "main"
+const maxBodySize = 10 << 20 // 10 MB
+
+// ── State storage ───────────────────────────────────────────────────────────
 
 type stateStore interface {
 	Load() (AppState, error)
@@ -221,6 +370,17 @@ func (s *postgresStore) Save(state AppState) error {
 	return err
 }
 
+// ── Server ──────────────────────────────────────────────────────────────────
+
+type stateServer struct {
+	mu            sync.RWMutex
+	state         AppState
+	store         stateStore
+	sessions      *sessionStore
+	limiter       *rateLimiter
+	allowedOrigin string
+}
+
 func main() {
 	server, err := newServer()
 	if err != nil {
@@ -228,9 +388,10 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/app-state", server.corsMiddleware(http.HandlerFunc(server.handleAppState)))
 	mux.Handle("/api/login", server.corsMiddleware(http.HandlerFunc(server.handleLogin)))
+	mux.Handle("/api/logout", server.corsMiddleware(http.HandlerFunc(server.handleLogout)))
 	mux.Handle("/api/me", server.corsMiddleware(http.HandlerFunc(server.handleMe)))
+	mux.Handle("/api/app-state", server.corsMiddleware(http.HandlerFunc(server.handleAppState)))
 	mux.Handle("/api/health", server.corsMiddleware(http.HandlerFunc(handleHealth)))
 
 	port := os.Getenv("PORT")
@@ -238,14 +399,8 @@ func main() {
 		port = "3001"
 	}
 
-	log.Printf("Starting ITINV backend on port %s", port)
+	log.Printf("Starting ITINV backend on port %s (CORS origin: %s)", port, server.allowedOrigin)
 	log.Fatal(http.ListenAndServe(":"+port, mux))
-}
-
-type stateServer struct {
-	mu    sync.RWMutex
-	state AppState
-	store stateStore
 }
 
 func newServer() (*stateServer, error) {
@@ -260,7 +415,13 @@ func newServer() (*stateServer, error) {
 	}
 
 	log.Printf("State storage backend: %s", storageName)
-	return &stateServer{state: state, store: store}, nil
+	return &stateServer{
+		state:         state,
+		store:         store,
+		sessions:      newSessionStore(),
+		limiter:       newRateLimiter(10, 15*time.Minute),
+		allowedOrigin: getAllowedOrigin(),
+	}, nil
 }
 
 func newStateStoreFromEnv() (stateStore, string, error) {
@@ -281,6 +442,8 @@ func newStateStoreFromEnv() (stateStore, string, error) {
 	return &fileStore{path: stateFilePath}, "file", nil
 }
 
+// ── Config helpers ──────────────────────────────────────────────────────────
+
 func getAdminEmail() string {
 	email := os.Getenv("ADMIN_EMAIL")
 	if email == "" {
@@ -297,11 +460,15 @@ func getAdminPassword() string {
 	return strings.TrimSpace(password)
 }
 
-func getAuthToken() string {
-	secret := getAdminEmail() + ":" + getAdminPassword()
-	sum := sha256.Sum256([]byte(secret))
-	return fmt.Sprintf("%x", sum[:])
+func getAllowedOrigin() string {
+	origin := strings.TrimSpace(os.Getenv("ALLOWED_ORIGIN"))
+	if origin == "" {
+		return "*"
+	}
+	return origin
 }
+
+// ── State normalizer ────────────────────────────────────────────────────────
 
 func normalizeState(state AppState) AppState {
 	if state.Equipment == nil {
@@ -334,48 +501,85 @@ func normalizeState(state AppState) AppState {
 	return state
 }
 
+// ── Handlers ────────────────────────────────────────────────────────────────
+
 func (s *stateServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
+	clientIP := getClientIP(r)
+	if !s.limiter.allow(clientIP) {
+		respondError(w, http.StatusTooManyRequests, "Too many login attempts. Try again later.")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 	var payload LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		respondError(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
 
 	email := strings.TrimSpace(payload.Email)
 	password := strings.TrimSpace(payload.Password)
 
-	if !strings.EqualFold(email, getAdminEmail()) || password != getAdminPassword() {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	adminEmail := getAdminEmail()
+	adminPassword := getAdminPassword()
+	emailMatch := strings.EqualFold(email, adminEmail)
+	passMatch := subtle.ConstantTimeCompare([]byte(password), []byte(adminPassword)) == 1
+
+	if !emailMatch || !passMatch {
+		respondError(w, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
 
-	respondJSON(w, LoginResponse{Token: getAuthToken(), Email: getAdminEmail(), Role: "admin"})
+	token, err := s.sessions.create(adminEmail, "admin")
+	if err != nil {
+		log.Printf("failed to create session: %v", err)
+		respondError(w, http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	respondJSON(w, LoginResponse{Token: token, Email: adminEmail, Role: "admin"})
+}
+
+func (s *stateServer) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	token := extractBearerToken(r)
+	if token != "" {
+		s.sessions.delete(token)
+	}
+
+	respondJSON(w, map[string]bool{"ok": true})
 }
 
 func (s *stateServer) handleMe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	if !authorize(r) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	sess, ok := s.authorize(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	respondJSON(w, UserResponse{Email: getAdminEmail(), Role: "admin"})
+	respondJSON(w, UserResponse{Email: sess.email, Role: sess.role})
 }
 
 func (s *stateServer) handleAppState(w http.ResponseWriter, r *http.Request) {
-	if !authorize(r) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if _, ok := s.authorize(r); !ok {
+		respondError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
@@ -387,9 +591,15 @@ func (s *stateServer) handleAppState(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, state)
 
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, int64(maxBodySize))
 		var payload AppState
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				respondError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+				return
+			}
+			respondError(w, http.StatusBadRequest, "Invalid JSON payload")
 			return
 		}
 
@@ -401,7 +611,7 @@ func (s *stateServer) handleAppState(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		if err != nil {
 			log.Printf("error saving state: %v", err)
-			http.Error(w, "Failed to save state", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "Failed to save state")
 			return
 		}
 
@@ -409,44 +619,61 @@ func (s *stateServer) handleAppState(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
-}
-
-func authorize(r *http.Request) bool {
-	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
-		return token == getAuthToken()
-	}
-	return false
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	respondJSON(w, map[string]bool{"ok": true})
 }
 
+// ── Auth & helpers ──────────────────────────────────────────────────────────
+
+func extractBearerToken(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimPrefix(auth, "Bearer ")
+	}
+	return ""
+}
+
+func (s *stateServer) authorize(r *http.Request) (userSession, bool) {
+	token := extractBearerToken(r)
+	if token == "" {
+		return userSession{}, false
+	}
+	return s.sessions.get(token)
+}
+
 func respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Printf("failed to write response: %v", err)
 	}
 }
 
+func respondError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(ErrorResponse{Error: message})
+}
+
 func (s *stateServer) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := s.allowedOrigin
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		if origin != "*" {
+			w.Header().Set("Vary", "Origin")
+		}
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -455,4 +682,17 @@ func (s *stateServer) corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func getClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if ip := strings.TrimSpace(strings.Split(xff, ",")[0]); ip != "" {
+			return ip
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

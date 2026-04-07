@@ -3,12 +3,14 @@ services:
     name: itinv-backend
     runtime: go
     rootDir: backend-go
-    buildCommand: go mod tidy
-    startCommand: go run main.go
+    buildCommand: go mod tidy && go build -o server .
+    startCommand: ./server
     envVars:
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD
+        sync: false
+      - key: ALLOWED_ORIGIN
         sync: false
       - key: DATABASE_URL
         fromDatabase:

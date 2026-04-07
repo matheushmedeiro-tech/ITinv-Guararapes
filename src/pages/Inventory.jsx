@@ -1,64 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { apiClient } from '@/api/apiClient';
-
-// ─── Default stock types ────────────────────────────────────────────────────
-const DEFAULT_STOCK_TYPES = ['Cabo', 'HD', 'Memória', 'Monitor', 'Notebook', 'Periférico', 'Teclado', 'Mouse', 'Fonte', 'Outro'];
-const DEFAULT_STOCK_LOCATIONS = ['TI - Almoxarifado'];
-const DEFAULT_STOCK_LOAN_DESTINATIONS = ['Financeiro', 'RH', 'Recepção'];
-
-// ─── Default app state ──────────────────────────────────────────────────────
-const defaultAppState = {
-  // Patrimônio: ativos fixos rastreáveis por unidade
-  equipment: [
-    { id: '1', name: 'Workstation A1', type: 'Computer', origin: 'Warehouse', formatted: true, configured: true, status: 'OK', problemType: '', problemDescription: '' },
-    { id: '2', name: 'Reception Monitor', type: 'Monitor', origin: 'New stock', formatted: false, configured: false, status: 'Problem', problemType: 'Screen issue', problemDescription: 'Flickering screen during startup.' },
-    { id: '3', name: 'Finance Notebook', type: 'Notebook', origin: 'Lease', formatted: true, configured: false, status: 'OK', problemType: '', problemDescription: '' }
-  ],
-  equipmentTypes: ['Computer', 'Monitor', 'Notebook', 'Printer', 'Other'],
-  origins: ['Warehouse', 'New stock', 'Lease', 'Office', 'Repair'],
-  problemTypes: ['Screen issue', 'Battery', 'Performance', 'Network', 'Other'],
-  // Estoque: itens com quantidade, empréstimos e movimentação
-  stockItems: [
-    { id: 'si-1', type: 'Cabo', origin: 'TI - Almoxarifado', totalQuantity: 5, minQuantity: 1, notes: '' },
-    { id: 'si-2', type: 'Memória', origin: 'TI - Almoxarifado', totalQuantity: 4, minQuantity: 2, notes: '' }
-  ],
-  stockLoans: [],
-  stockTypes: DEFAULT_STOCK_TYPES,
-  stockLocations: DEFAULT_STOCK_LOCATIONS,
-  stockLoanDestinations: DEFAULT_STOCK_LOAN_DESTINATIONS
-};
-
-// ─── State normalizer ───────────────────────────────────────────────────────
-const normalizeAppState = (state) => ({
-  ...state,
-  // Strip legacy loan/category/quantity fields from patrimônio data
-  equipment: (state.equipment || []).map(({ loaned, loanTo, loanDate, category, quantity, ...item }) => ({
-    problemType: '',
-    problemDescription: '',
-    ...item
-  })),
-  equipmentTypes: state.equipmentTypes || defaultAppState.equipmentTypes,
-  origins: state.origins || defaultAppState.origins,
-  problemTypes: state.problemTypes || defaultAppState.problemTypes,
-  stockItems: (state.stockItems || []).map((item) => ({
-    minQuantity: 0,
-    notes: '',
-    ...item,
-    name: item.name || item.type || '',
-    totalQuantity: Math.max(0, Number(item.totalQuantity) || 0)
-  })),
-  stockLoans: (state.stockLoans || []).map((loan) => ({
-    notes: '',
-    ...loan,
-    quantity: Math.max(1, Number(loan.quantity) || 1)
-  })),
-  stockTypes: state.stockTypes || DEFAULT_STOCK_TYPES,
-  stockLocations: state.stockLocations || DEFAULT_STOCK_LOCATIONS,
-  stockLoanDestinations: state.stockLoanDestinations || DEFAULT_STOCK_LOAN_DESTINATIONS
-});
+import { useAuth } from '@/lib/AuthContext';
+import { useAppState } from '@/hooks/useAppState';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const getTodayDateValue = () => new Date().toISOString().slice(0, 10);
 const normalizeText = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const formatDate = (dateStr) => {
@@ -81,9 +25,8 @@ const initialStockItemForm = { type: '', origin: '', totalQuantity: 1, minQuanti
 const initialLoanForm = { quantity: 1, loanTo: '', loanDate: '', notes: '' };
 
 export default function Inventory() {
-  const [appState, setAppState] = useState(defaultAppState);
-  const [isLoadingState, setIsLoadingState] = useState(true);
-  const [backendAvailable, setBackendAvailable] = useState(false);
+  const { appState, setAppState, isLoading: isLoadingState, isSaving, saveError, dismissError } = useAppState();
+  const { logout } = useAuth();
 
   // ── Panel toggle ─────────────────────────────────────────────────────────
   const [activePanel, setActivePanel] = useState('patrimonio');
@@ -133,23 +76,16 @@ export default function Inventory() {
 
   // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    (async () => {
-      try {
-        const remoteState = await apiClient.get('/api/app-state');
-        setAppState(normalizeAppState(remoteState));
-        setBackendAvailable(true);
-      } catch (e) {
-        console.warn('Failed to load backend state:', e);
-      } finally {
-        setIsLoadingState(false);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (isLoadingState || !backendAvailable) return;
-    apiClient.post('/api/app-state', appState).catch(() => setBackendAvailable(false));
-  }, [appState, backendAvailable, isLoadingState]);
+    const handleEscape = (e) => {
+      if (e.key !== 'Escape') return;
+      if (isReturnModalOpen) { closeReturnModal(); return; }
+      if (isLoanModalOpen) { closeLoanModal(); return; }
+      if (isStockModalOpen) { closeStockModal(); return; }
+      if (isModalOpen) { closeForm(); return; }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  });
 
   useEffect(() => {
     if (!isModalOpen) return;
@@ -210,12 +146,15 @@ export default function Inventory() {
     if (editingId) {
       setAppState((prev) => ({ ...prev, equipment: prev.equipment.map((i) => i.id === editingId ? { ...i, ...payload, id: editingId } : i) }));
     } else {
-      setAppState((prev) => ({ ...prev, equipment: [{ ...payload, id: generateId() }, ...prev.equipment] }));
+      setAppState((prev) => ({ ...prev, equipment: [{ ...payload, id: crypto.randomUUID() }, ...prev.equipment] }));
     }
     closeForm();
   };
 
-  const deleteEquipment = (id) => setAppState((prev) => ({ ...prev, equipment: prev.equipment.filter((i) => i.id !== id) }));
+  const deleteEquipment = (id) => {
+    if (!window.confirm('Deseja remover este equipamento permanentemente?')) return;
+    setAppState((prev) => ({ ...prev, equipment: prev.equipment.filter((i) => i.id !== id) }));
+  };
 
   const resolveEquipment = (id) => setAppState((prev) => ({
     ...prev, equipment: prev.equipment.map((i) => i.id === id ? { ...i, status: 'OK' } : i)
@@ -322,18 +261,21 @@ export default function Inventory() {
         closeStockModal();
         return;
       }
-      setAppState((prev) => ({ ...prev, stockItems: [{ ...stockItemForm, name: stockItemForm.type, totalQuantity: qty, id: generateId() }, ...prev.stockItems] }));
+      setAppState((prev) => ({ ...prev, stockItems: [{ ...stockItemForm, name: stockItemForm.type, totalQuantity: qty, id: crypto.randomUUID() }, ...prev.stockItems] }));
     } else {
       setAppState((prev) => ({ ...prev, stockItems: prev.stockItems.map((i) => i.id === editingStockId ? { ...i, ...stockItemForm, name: stockItemForm.type, totalQuantity: qty } : i) }));
     }
     closeStockModal();
   };
 
-  const deleteStockItem = (id) => setAppState((prev) => ({
-    ...prev,
-    stockItems: prev.stockItems.filter((i) => i.id !== id),
-    stockLoans: prev.stockLoans.filter((l) => l.itemId !== id)
-  }));
+  const deleteStockItem = (id) => {
+    if (!window.confirm('Deseja remover este item de estoque permanentemente?')) return;
+    setAppState((prev) => ({
+      ...prev,
+      stockItems: prev.stockItems.filter((i) => i.id !== id),
+      stockLoans: prev.stockLoans.filter((l) => l.itemId !== id)
+    }));
+  };
 
   const openLoanModal = (item) => { setLoanTargetItem(item); setLoanForm({ ...initialLoanForm, quantity: 1, loanDate: getTodayDateValue() }); setIsLoanModalOpen(true); };
   const closeLoanModal = () => { setIsLoanModalOpen(false); setLoanTargetItem(null); setLoanForm(initialLoanForm); };
@@ -346,7 +288,7 @@ export default function Inventory() {
     setAppState((prev) => ({
       ...prev,
       stockLoans: [...prev.stockLoans, {
-        id: generateId(), itemId: loanTargetItem.id, itemName: loanTargetItem.type,
+        id: crypto.randomUUID(), itemId: loanTargetItem.id, itemName: loanTargetItem.type,
         itemType: loanTargetItem.type, quantity: qty,
         loanTo: loanForm.loanTo.trim(), loanDate: loanForm.loanDate || getTodayDateValue(), notes: loanForm.notes || ''
       }]
@@ -411,19 +353,39 @@ export default function Inventory() {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="max-w-7xl mx-auto px-4 py-6">
 
+        {/* Save status indicator */}
+        {isSaving && (
+          <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-2xl bg-slate-800 px-4 py-2 text-sm text-white shadow-lg">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" /> Salvando...
+          </div>
+        )}
+
+        {/* Error banner */}
+        {saveError && (
+          <div className="fixed top-4 right-4 z-50 flex items-center gap-3 rounded-2xl bg-rose-600 px-5 py-3 text-sm text-white shadow-lg">
+            <span>{saveError}</span>
+            <button onClick={dismissError} className="font-bold hover:underline">✕</button>
+          </div>
+        )}
+
         {/* Header + panel toggle */}
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Inventário de TI</p>
             <h1 className="text-3xl font-semibold">Painel de equipamentos</h1>
           </div>
-          <div className="flex rounded-2xl border border-slate-300 overflow-hidden self-start sm:self-auto">
+          <div className="flex items-center gap-3 self-start sm:self-auto">
+          <div className="flex rounded-2xl border border-slate-300 overflow-hidden">
             <button onClick={() => setActivePanel('patrimonio')} className={`px-6 py-2 text-sm font-semibold transition ${activePanel === 'patrimonio' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
               Patrimônio
             </button>
             <button onClick={() => setActivePanel('estoque')} className={`px-6 py-2 text-sm font-semibold transition border-l border-slate-300 ${activePanel === 'estoque' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
               Estoque
             </button>
+          </div>
+          <button onClick={logout} className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
+            Sair
+          </button>
           </div>
         </header>
 

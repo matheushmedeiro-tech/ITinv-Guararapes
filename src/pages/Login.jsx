@@ -46,7 +46,7 @@ export default function Login() {
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Email</span>
             <input
-              type="text"
+              type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-500 outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
