@@ -372,7 +372,7 @@ export default function Inventory() {
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Inventário de TI</p>
-            <h1 className="text-3xl font-semibold">Painel de equipamentos</h1>
+            <h1 className="text-3xl font-semibold">{activePanel === 'patrimonio' ? 'Painel de patrimônio' : 'Painel de estoque'}</h1>
           </div>
           <div className="flex items-center gap-3 self-start sm:self-auto">
           <div className="flex rounded-2xl border border-slate-300 overflow-hidden">
