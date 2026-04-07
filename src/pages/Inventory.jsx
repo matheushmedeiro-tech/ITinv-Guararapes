@@ -64,6 +64,7 @@ const normalizeAppState = (state) => ({
 });
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const getTodayDateValue = () => new Date().toISOString().slice(0, 10);
 
 const formatLoanDuration = (loanDate) => {
   if (!loanDate) return '';
@@ -203,7 +204,7 @@ export default function Inventory() {
       problemDescription: item.problemDescription || '',
       loaned: item.loaned ?? false,
       loanTo: item.loanTo || '',
-      loanDate: item.loanDate || ''
+      loanDate: item.loaned ? item.loanDate || getTodayDateValue() : ''
     });
     setIsModalOpen(true);
   };
@@ -223,7 +224,6 @@ export default function Inventory() {
     if (!formValues.origin) return;
     if (formValues.status === 'Problem' && !formValues.problemType) return;
     if (formValues.loaned && !formValues.loanTo.trim()) return;
-    if (formValues.loaned && !formValues.loanDate) return;
     
     const payload = {
       ...formValues,
@@ -233,7 +233,7 @@ export default function Inventory() {
       problemDescription: formValues.status === 'Problem' ? formValues.problemDescription.trim() : '',
       loaned: formValues.loaned,
       loanTo: formValues.loaned ? formValues.loanTo.trim() : '',
-      loanDate: formValues.loaned ? formValues.loanDate : ''
+      loanDate: formValues.loaned ? formValues.loanDate || getTodayDateValue() : ''
     };
 
     if (editingId) {
@@ -817,7 +817,7 @@ export default function Inventory() {
                         ...prev,
                         loaned: event.target.checked,
                         loanTo: event.target.checked ? prev.loanTo : '',
-                        loanDate: event.target.checked ? prev.loanDate : ''
+                        loanDate: event.target.checked ? prev.loanDate || getTodayDateValue() : ''
                       }))
                     }
                     className="h-4 w-4 rounded border-slate-300 text-slate-900"
@@ -829,14 +829,17 @@ export default function Inventory() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block">
                     <span className="text-sm text-slate-700">Destino / Setor</span>
-                    <input
-                      type="text"
+                    <select
                       value={formValues.loanTo}
                       onChange={(event) => setFormValues({ ...formValues, loanTo: event.target.value })}
                       className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none focus:border-slate-500"
-                      placeholder="Ex: Financeiro, RH, Auditoria"
                       required
-                    />
+                    >
+                      <option value="">Selecione um setor</option>
+                      {appState.origins.map((origin) => (
+                        <option key={origin} value={origin}>{origin}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="block">
                     <span className="text-sm text-slate-700">Data do empréstimo</span>
@@ -845,7 +848,6 @@ export default function Inventory() {
                       value={formValues.loanDate}
                       onChange={(event) => setFormValues({ ...formValues, loanDate: event.target.value })}
                       className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none focus:border-slate-500"
-                      required
                     />
                   </label>
                 </div>
