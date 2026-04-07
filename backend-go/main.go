@@ -26,16 +26,39 @@ type EquipmentItem struct {
 	Status             string `json:"status"`
 	ProblemType        string `json:"problemType"`
 	ProblemDescription string `json:"problemDescription"`
-	Loaned             bool   `json:"loaned"`
-	LoanTo             string `json:"loanTo"`
-	LoanDate           string `json:"loanDate"`
+}
+
+type StockItem struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Origin        string `json:"origin"`
+	TotalQuantity int    `json:"totalQuantity"`
+	MinQuantity   int    `json:"minQuantity"`
+	Notes         string `json:"notes"`
+}
+
+type StockLoan struct {
+	ID       string `json:"id"`
+	ItemID   string `json:"itemId"`
+	ItemName string `json:"itemName"`
+	ItemType string `json:"itemType"`
+	Quantity int    `json:"quantity"`
+	LoanTo   string `json:"loanTo"`
+	LoanDate string `json:"loanDate"`
+	Notes    string `json:"notes"`
 }
 
 type AppState struct {
-	Equipment      []EquipmentItem `json:"equipment"`
-	EquipmentTypes []string        `json:"equipmentTypes"`
-	Origins        []string        `json:"origins"`
-	ProblemTypes   []string        `json:"problemTypes"`
+	Equipment             []EquipmentItem `json:"equipment"`
+	EquipmentTypes        []string        `json:"equipmentTypes"`
+	Origins               []string        `json:"origins"`
+	ProblemTypes          []string        `json:"problemTypes"`
+	StockItems            []StockItem     `json:"stockItems"`
+	StockLoans            []StockLoan     `json:"stockLoans"`
+	StockTypes            []string        `json:"stockTypes"`
+	StockLocations        []string        `json:"stockLocations"`
+	StockLoanDestinations []string        `json:"stockLoanDestinations"`
 }
 
 type LoginRequest struct {
@@ -56,51 +79,18 @@ type UserResponse struct {
 
 var defaultAppState = AppState{
 	Equipment: []EquipmentItem{
-		{
-			ID:                 "1",
-			Name:               "Workstation A1",
-			Type:               "Computer",
-			Origin:             "Warehouse",
-			Formatted:          true,
-			Configured:         true,
-			Status:             "OK",
-			ProblemDescription: "",
-			Loaned:             false,
-			LoanTo:             "",
-			LoanDate:           "",
-		},
-		{
-			ID:                 "2",
-			Name:               "Reception Monitor",
-			Type:               "Monitor",
-			Origin:             "New stock",
-			Formatted:          false,
-			Configured:         false,
-			Status:             "Problem",
-			ProblemType:        "Screen issue",
-			ProblemDescription: "Flickering screen during startup.",
-			Loaned:             true,
-			LoanTo:             "Finance",
-			LoanDate:           "2026-04-01",
-		},
-		{
-			ID:                 "3",
-			Name:               "Finance Notebook",
-			Type:               "Notebook",
-			Origin:             "Lease",
-			Formatted:          true,
-			Configured:         false,
-			Status:             "OK",
-			ProblemType:        "",
-			ProblemDescription: "",
-			Loaned:             false,
-			LoanTo:             "",
-			LoanDate:           "",
-		},
+		{ID: "1", Name: "Workstation A1", Type: "Computer", Origin: "Warehouse", Formatted: true, Configured: true, Status: "OK"},
+		{ID: "2", Name: "Reception Monitor", Type: "Monitor", Origin: "New stock", Formatted: false, Configured: false, Status: "Problem", ProblemType: "Screen issue", ProblemDescription: "Flickering screen during startup."},
+		{ID: "3", Name: "Finance Notebook", Type: "Notebook", Origin: "Lease", Formatted: true, Configured: false, Status: "OK"},
 	},
-	EquipmentTypes: []string{"Computer", "Monitor", "Notebook", "Printer", "Other"},
-	Origins:        []string{"Warehouse", "New stock", "Lease", "Office", "Repair"},
-	ProblemTypes:   []string{"Screen issue", "Battery", "Performance", "Network", "Other"},
+	EquipmentTypes:        []string{"Computer", "Monitor", "Notebook", "Printer", "Other"},
+	Origins:               []string{"Warehouse", "New stock", "Lease", "Office", "Repair"},
+	ProblemTypes:          []string{"Screen issue", "Battery", "Performance", "Network", "Other"},
+	StockItems:            []StockItem{},
+	StockLoans:            []StockLoan{},
+	StockTypes:            []string{"Cabo", "Memória", "Fonte", "Teclado", "Mouse", "Adaptador", "Outro"},
+	StockLocations:        []string{"TI - Almoxarifado"},
+	StockLoanDestinations: []string{"Financeiro", "RH", "Recepção"},
 }
 
 const defaultStateFilePath = "data/state.json"
@@ -325,6 +315,21 @@ func normalizeState(state AppState) AppState {
 	}
 	if len(state.ProblemTypes) == 0 {
 		state.ProblemTypes = defaultAppState.ProblemTypes
+	}
+	if state.StockItems == nil {
+		state.StockItems = []StockItem{}
+	}
+	if state.StockLoans == nil {
+		state.StockLoans = []StockLoan{}
+	}
+	if len(state.StockTypes) == 0 {
+		state.StockTypes = defaultAppState.StockTypes
+	}
+	if len(state.StockLocations) == 0 {
+		state.StockLocations = defaultAppState.StockLocations
+	}
+	if len(state.StockLoanDestinations) == 0 {
+		state.StockLoanDestinations = defaultAppState.StockLoanDestinations
 	}
 	return state
 }
