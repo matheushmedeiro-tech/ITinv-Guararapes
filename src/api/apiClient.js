@@ -1,5 +1,22 @@
 const AUTH_TOKEN_KEY = 'itinv_auth_token';
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const getApiBaseUrl = () => {
+  const envBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+  if (envBaseUrl) return envBaseUrl;
+
+  if (typeof window === 'undefined') return '';
+
+  const { hostname } = window.location;
+  if (!hostname.endsWith('.onrender.com')) return '';
+
+  // Render fallback: if frontend is "*-frontend", infer "*-backend".
+  if (hostname.includes('-frontend.')) {
+    return `https://${hostname.replace('-frontend.', '-backend.')}`;
+  }
+
+  return '';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const withBaseUrl = (url) => {
   if (!API_BASE_URL) return url;
