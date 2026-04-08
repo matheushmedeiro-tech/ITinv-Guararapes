@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useAppState } from '@/hooks/useAppState';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// Helpers
 const getTodayDateValue = () => new Date().toISOString().slice(0, 10);
 const normalizeText = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const formatDate = (dateStr) => {
@@ -15,7 +15,7 @@ const formatDate = (dateStr) => {
     : `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`;
 };
 
-// ─── Initial form states ─────────────────────────────────────────────────────
+// Form defaults
 const initialPatrimonioForm = {
   name: '', type: '', origin: '',
   formatted: false, configured: false,
@@ -28,10 +28,10 @@ export default function Inventory() {
   const { appState, setAppState, isLoading: isLoadingState, isSaving, saveError, dismissError } = useAppState();
   const { logout } = useAuth();
 
-  // ── Panel toggle ─────────────────────────────────────────────────────────
+  // Panel
   const [activePanel, setActivePanel] = useState('patrimonio');
 
-  // ── Patrimônio state ──────────────────────────────────────────────────────
+  // Patrimônio
   const [search, setSearch] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [selectedOrigin, setSelectedOrigin] = useState('');
@@ -44,7 +44,7 @@ export default function Inventory() {
   const [newItemLabel, setNewItemLabel] = useState('');
   const [newItemEmoji, setNewItemEmoji] = useState('📦');
 
-  // ── Estoque state ─────────────────────────────────────────────────────────
+  // Estoque
   const [stockSearch, setStockSearch] = useState('');
   const [stockTypeFilter, setStockTypeFilter] = useState('');
   const [stockView, setStockView] = useState('items'); // 'items' | 'loans'
@@ -63,7 +63,7 @@ export default function Inventory() {
   const [newStockLocationLabel, setNewStockLocationLabel] = useState('');
   const [newStockLoanDestinationLabel, setNewStockLoanDestinationLabel] = useState('');
   
-  // ── Autocomplete refs/state (patrimônio form) ─────────────────────────────
+  // Autocomplete
   const [typeInputValue, setTypeInputValue] = useState('');
   const [typeShowDropdown, setTypeShowDropdown] = useState(false);
   const [originInputValue, setOriginInputValue] = useState('');
@@ -73,8 +73,6 @@ export default function Inventory() {
   const typeDropdownRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const originDropdownRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const problemTypeDropdownRef = useRef(/** @type {HTMLDivElement | null} */ (null));
-
-  // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key !== 'Escape') return;
@@ -98,8 +96,6 @@ export default function Inventory() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [isModalOpen, typeShowDropdown, originShowDropdown, problemTypeShowDropdown]);
-
-  // ── Patrimônio computed ───────────────────────────────────────────────────
   const filteredEquipment = useMemo(() =>
     appState.equipment
       .filter((i) => i.name.toLowerCase().includes(search.toLowerCase()))
@@ -206,8 +202,6 @@ export default function Inventory() {
       setProblemTypeInputValue(formValues.problemType);
     }
   }, [isModalOpen, formValues.type, formValues.origin, formValues.problemType]);
-
-  // ── Estoque computed + handlers ───────────────────────────────────────────
   const getLoanedQty = (itemId) => appState.stockLoans.filter((l) => l.itemId === itemId).reduce((s, l) => s + l.quantity, 0);
   const getAvailableQty = (item) => item.totalQuantity - getLoanedQty(item.id);
 
@@ -347,8 +341,6 @@ export default function Inventory() {
     if (!window.confirm(`Deseja remover o destino "${name}"?`)) return;
     setAppState((prev) => ({ ...prev, stockLoanDestinations: prev.stockLoanDestinations.filter((d) => d !== name) }));
   };
-
-  // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -389,7 +381,7 @@ export default function Inventory() {
           </div>
         </header>
 
-        {/* ════════════════ PAINEL PATRIMÔNIO ════════════════ */}
+        {/* Patrimônio */}
         {activePanel === 'patrimonio' && (
           <>
             <div className="flex flex-wrap gap-3 mb-6">
@@ -528,7 +520,7 @@ export default function Inventory() {
           </>
         )}
 
-        {/* ════════════════ PAINEL ESTOQUE ════════════════ */}
+        {/* Estoque */}
         {activePanel === 'estoque' && (
           <>
             <div className="flex flex-wrap gap-3 mb-6">
@@ -725,7 +717,7 @@ export default function Inventory() {
 
       </div>
 
-      {/* ════════ MODAL PATRIMÔNIO ════════ */}
+      {/* Modal patrimônio */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
           <div className="w-full max-w-2xl rounded-[28px] bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -823,7 +815,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* ════════ MODAL ESTOQUE ════════ */}
+      {/* Modal estoque */}
       {isStockModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
           <div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
@@ -878,7 +870,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* ════════ MODAL EMPRÉSTIMO ════════ */}
+      {/* Modal empréstimo */}
       {isLoanModalOpen && loanTargetItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
           <div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
@@ -921,7 +913,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {/* ════════ MODAL DEVOLUÇÃO ════════ */}
+      {/* Modal devolução */}
       {isReturnModalOpen && returnTargetLoan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
           <div className="w-full max-w-sm rounded-[28px] bg-white p-6 shadow-2xl">
@@ -951,4 +943,3 @@ export default function Inventory() {
     </div>
   );
 }
-

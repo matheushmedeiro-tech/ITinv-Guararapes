@@ -1,54 +1,10 @@
 {
-  "equipment": [
-    {
-      "id": "1",
-      "name": "Workstation A1",
-      "type": "Computer",
-      "origin": "Warehouse",
-      "formatted": true,
-      "configured": true,
-      "status": "OK",
-      "problemType": "",
-      "problemDescription": "",
-      "loaned": false,
-      "loanTo": "",
-      "loanDate": ""
-    },
-    {
-      "id": "2",
-      "name": "Reception Monitor",
-      "type": "Monitor",
-      "origin": "New stock",
-      "formatted": false,
-      "configured": false,
-      "status": "Problem",
-      "problemType": "Screen issue",
-      "problemDescription": "Flickering screen during startup.",
-      "loaned": true,
-      "loanTo": "Finance",
-      "loanDate": "2026-04-01"
-    },
-    {
-      "id": "3",
-      "name": "Finance Notebook",
-      "type": "Notebook",
-      "origin": "Lease",
-      "formatted": true,
-      "configured": false,
-      "status": "OK",
-      "problemType": "",
-      "problemDescription": "",
-      "loaned": false,
-      "loanTo": "",
-      "loanDate": ""
-    }
-  ],
+  "equipment": [],
   "equipmentTypes": [
-    "Computer",
     "Monitor",
     "Notebook",
-    "Printer",
-    "Other"
+    "computador",
+    "impressora"
   ],
   "origins": [
     "Warehouse",

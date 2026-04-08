@@ -19,8 +19,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// ── Data types ──────────────────────────────────────────────────────────────
-
 type EquipmentItem struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
@@ -85,8 +83,6 @@ type UserResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
-
-// ── Session management ──────────────────────────────────────────────────────
 
 const sessionTTL = 24 * time.Hour
 
@@ -160,8 +156,6 @@ func (s *sessionStore) cleanupLoop() {
 	}
 }
 
-// ── Rate limiter ────────────────────────────────────────────────────────────
-
 type rateLimiter struct {
 	mu          sync.Mutex
 	attempts    map[string][]time.Time
@@ -225,8 +219,6 @@ func (rl *rateLimiter) cleanupLoop() {
 	}
 }
 
-// ── Default state ───────────────────────────────────────────────────────────
-
 var defaultAppState = AppState{
 	Equipment:             []EquipmentItem{},
 	EquipmentTypes:        []string{"Computer", "Monitor", "Notebook", "Printer", "Other"},
@@ -242,8 +234,6 @@ var defaultAppState = AppState{
 const defaultStateFilePath = "data/state.json"
 const stateKey = "main"
 const maxBodySize = 10 << 20 // 10 MB
-
-// ── State storage ───────────────────────────────────────────────────────────
 
 type stateStore interface {
 	Load() (AppState, error)
@@ -370,8 +360,6 @@ func (s *postgresStore) Save(state AppState) error {
 	return err
 }
 
-// ── Server ──────────────────────────────────────────────────────────────────
-
 type stateServer struct {
 	mu            sync.RWMutex
 	state         AppState
@@ -442,8 +430,6 @@ func newStateStoreFromEnv() (stateStore, string, error) {
 	return &fileStore{path: stateFilePath}, "file", nil
 }
 
-// ── Config helpers ──────────────────────────────────────────────────────────
-
 func getAdminEmail() string {
 	email := os.Getenv("ADMIN_EMAIL")
 	if email == "" {
@@ -467,8 +453,6 @@ func getAllowedOrigin() string {
 	}
 	return origin
 }
-
-// ── State normalizer ────────────────────────────────────────────────────────
 
 func normalizeState(state AppState) AppState {
 	if state.Equipment == nil {
@@ -500,8 +484,6 @@ func normalizeState(state AppState) AppState {
 	}
 	return state
 }
-
-// ── Handlers ────────────────────────────────────────────────────────────────
 
 func (s *stateServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -632,8 +614,6 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, map[string]bool{"ok": true})
 }
-
-// ── Auth & helpers ──────────────────────────────────────────────────────────
 
 func extractBearerToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
